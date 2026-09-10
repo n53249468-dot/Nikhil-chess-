@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>My Chess Game - Full Rules</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#222;color:#fff;font-family:Arial,sans-serif;text-align:center}
+h1{margin:14px 0 6px;font-size:28px}
+#status{font-size:18px;margin:8px;min-height:22px}
+#board{width:min(94vw,520px);aspect-ratio:1;margin:14px auto;display:grid;grid-template-columns:repeat(8,1fr);border:4px solid #111}
+.s{display:flex;align-items:center;justify-content:center;font-size:clamp(30px,10vw,58px);cursor:pointer;user-select:none}
+.light{background:#f0d9b5}.dark{background:#b58863}
+.sel{box-shadow:inset 0 0 0 4px #ffeb00}
+button{font-size:17px;padding:10px 22px;border:0;border-radius:8px}
+</style>
+</head>
+<body>
+<h1>♟️ My Chess Game</h1>
+<div id="status">White's Turn</div>
+<div id="board"></div>
+<button onclick="resetGame()">Restart</button>
+
+<script>
+const U={r:"♜",n:"♞",b:"♝",q:"♛",k:"♚",p:"♟",R:"♖",N:"♘",B:"♗",Q:"♕",K:"♔",P:"♙"};
+const start=[
+["r","n","b","q","k","b","n","r"],["p","p","p","p","p","p","p","p"],
+["","","","","","","",""],["","","","","","","",""],
+["","","","","","","",""],["","","","","","","",""],
+["P","P","P","P","P","P","P","P"],["R","N","B","Q","K","B","N","R"]];
+
+let b,white,selected,gameOver,castling,enPassant;
+
+function resetGame(){
+ b=start.map(r=>r.slice());
+ white=true; selected=null; gameOver=false;
+ castling={K:true,Q:true,k:true,q:true};
+ enPassant=null;
+ draw();
+}
+
+function isWhite(p){return p && p===p.toUpperCase()}
+function inside(r,c){return r>=0&&r<8&&c>=0&&c<8}
+
+function draw(){
+ const el=document.getElementById("board"); el.innerHTML="";
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const x=document.createElement("div");
+  x.className="s "+((r+c)%2?"dark":"light");
+  if(selected&&selected.r===r&&selected.c===c)x.classList.add("sel");
+  x.textContent=U[b[r][c]]||"";
+  x.onclick=()=>tap(r,c);
+  el.appendChild(x);
+ }
+ document.getElementById("status").textContent =
+  gameOver ? "Game Over" : (white?"White's Turn":"Black's Turn");
+}
+
+function tap(r,c){
+ if(gameOver)return;
+ const p=b[r][c];
+
+ if(!selected){
+  if(!p || isWhite(p)!==white)return;
+  selected={r,c}; draw(); return;
+ }
+
+ const fr=selected.r,fc=selected.c,m=b[fr][fc];
+
+ if(p && isWhite(p)===isWhite(m)){
+  selected={r,c}; draw(); return;
+ }
+
+ if(legalMove(fr,fc,r,c,white)){
+  makeMove(fr,fc,r,c);
+  selected=null;
+  white=!white;
+
+  if(isCheckmate(white)){
+   gameOver=true;
+   document.getElementById("status").textContent =
+     (white?"Black":"White")+" wins by checkmate!";
+  } else if(isStalemate(white)){
+   gameOver=true;
+   document.getElementById("status").textContent="Draw by stalemate!";
+  } else {
+   draw();
+   if(inCheck(white))
+    document.getElementById("status").textContent=(white?"White":"Black")+" is in check!";
+  }
+  draw();
+ } else {
+  selected=null; draw();
+ }
+}
+
+function clear(fr,fc,tr,tc){
+ const sr=Math.sign(tr-fr),sc=Math.sign(tc-fc);
+ let r=fr+sr,c=fc+sc;
+ while(r!==tr||c!==tc){
+  if(b[r][c]!=="")return false;
+  r+=sr;c+=sc;
+ }
+ return true;
+}
+
+function attacks(p,fr,fc,tr,tc){
+ const dr=tr-fr,dc=tc-fc,R=Math.abs(dr),C=Math.abs(dc);
+ if(p==="P") return dr===-1&&C===1;
+ if(p==="p") return dr===1&&C===1;
+ if(p.toLowerCase()==="n") return (R===2&&C===1)||(R===1&&C===2);
+ if(p.toLowerCase()==="k") return R<=1&&C<=1;
+ if(p.toLowerCase()==="r") return (fr===tr||fc===tc)&&clear(fr,fc,tr,tc);
+ if(p.toLowerCase()==="b") return R===C&&clear(fr,fc,tr,tc);
+ if(p.toLowerCase()==="q") return (fr===tr||fc===tc||R===C)&&clear(fr,fc,tr,tc);
+ return false;
+}
+
+function findKing(side){
+ const k=side?"K":"k";
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++)
+  if(b[r][c]===k)return {r,c};
+ return null;
+}
+
+function inCheck(side){
+ const king=findKing(side);
+ if(!king)return true;
+ for(let r=0;r<8;r++)for(let c=0;c<8;c++){
+  const p=b[r][c];
+  if(p && isWhite(p)!==side && attacks(p,r,c,king.r,king.c))return true;
+ }
+ return false;
+}
+
+function pseudoLegal(p,fr,fc,tr,tc){
+ if(!inside(tr,tc)||!p)return false;
+ if(b[tr][tc] && isWhite(b[tr][tc])===isWhite(p))return false;
+
+ const dr=tr-fr,dc=tc-fc,R=Math.abs(dr),C=Math.abs(dc);
+
+ if(p==="P"||p==="p"){
+  const d=p==="P"?-1:1,startRow=p==="P"?6:1;
+  if(dc===0&&b[tr][tc]===""&&dr===d)return true;
+  if(dc===0&&b[tr][tc]===""&&fr===startRow&&dr===2*d&&b[fr+d][fc]==="")return true;
+  if(C===1&&dr===d&&b[tr][tc]!==""&&isWhite(b[tr][tc])!==isWhite(p))return true;
+  // En passant
+  if(C===1&&dr===d&&b[tr][tc]===""&&enPassant&&enPassant.r===tr&&enPassant.c===tc)return true;
+  return false;
+ }
+ if(p.toLowerCase()==="n")return(R===2&&C===1)||(R===1&&C===2);
+ if(p.toLowerCase()==="k")return R<=1&&C<=1;
+ if(p.toLowerCase()==="r")return(fr===tr||fc===tc)&&clear(fr,fc,tr,tc);
+ if(p.toLowerCase()==="b")return R===C&&clear(fr,fc,tr,tc);
+ if(p.toLowerCase()==="q")return(fr===tr||fc===tc||R===C)&&clear(fr,fc,tr,tc);
+ return false;
+}
+
+function legalMove(fr,fc,tr,tc,side){
+ const p=b[fr][fc];
+ if(!p||isWhite(p)!==side)return false;
+
+ // Castling
+ if(p.toLowerCase()==="k" && fr===tr && Math.abs(tc-fc)===2){
+  if(inCheck(side))return false;
+  const kingSide=tc>fc;
+  const right=side?(kingSide?"K":"Q"):(kingSide?"k":"q");
+  if(!castling[right])return false;
+  const rookC=kingSide?7:0;
+  if(b[fr][rookC] !== (side?"R":"r"))return false;
+  const step=kingSide?1:-1;
+  for(let c=fc+step;c!==rookC;c+=step)if(b[fr][c]!=="")return false;
+  if(inCheckAfter(fr,fc,fr,fc+step,side))return false;
+  if(inCheckAfter(fr,fc,fr,fc+2*step,side))return false;
+  return true;
+ }
+
+ if(!pseudoLegal(p,fr,fc,tr,tc))return false;
+
+ return !inCheckAfter(fr,fc,tr,tc,side);
+}
+
+function cloneBoard(){return b.map(r=>r.slice())}
+
+function inCheckAfter(fr,fc,tr,tc,side){
+ const save=b;
+ const old=b[tr][tc];
+
+ // Handle en-passant during simulation
+ let capturedEP=null;
+ if(save[fr][fc].toLowerCase()==="p" && fc!==tc && old==="" && enPassant &&
+    enPassant.r===tr && enPassant.c===tc){
+  const capR=side?tr+1:tr-1;
+  capturedEP={r:capR,c:tc,p:b[capR][tc]};
+  b[capR][tc]="";
+ }
+
+ b[tr][tc]=b[fr][fc]; b[fr][fc]="";
+ const check=inCheck(side);
+ b[fr][fc]=b[tr][tc]; b[tr][tc]=old;
+ if(capturedEP)b[capturedEP.r][capturedEP.c]=capturedEP.p;
+ return check;
+}
+
+function makeMove(fr,fc,tr,tc){
+ const p=b[fr][fc];
+ const target=b[tr][tc];
+
+ // En passant capture
+ if(p.toLowerCase()==="p"&&fc!==tc&&target===""&&enPassant&&
+    enPassant.r===tr&&enPassant.c===tc){
+  const capR=isWhite(p)?tr+1:tr-1;
+  b[capR][tc]="";
+ }
+
+ b[tr][tc]=p;b[fr][fc]="";
+
+ // Castling move also moves rook
+ if(p==="K"&&fr===tr&&Math.abs(tc-fc)===2){
+  if(tc>fc){b[7][5]="R";b[7][7]="";}
+  else{b[7][3]="R";b[7][0]="";}
+  castling.K=false;castling.Q=false;
+ }
+ if(p==="k"&&fr===tr&&Math.abs(tc-fc)===2){
+  if(tc>fc){b[0][5]="r";b[0][7]="";}
+  else{b[0][3]="r";b[0][0]="";}
+  castling.k=false;castling.q=false;
+ }
+
+ // Update castling rights
+ if(p==="K"){castling.K=false;castling.Q=false}
+ if(p==="k"){castling.k=false;castling.q=false}
+ if(fr===7&&fc===0)castling.Q=false;
+ if(fr===7&&fc===7)castling.K=false;
+ if(fr===0&&fc===0)castling.q=false;
+ if(fr===0&&fc===7)castling.k=false;
+
+ // Capturing a rook also removes its castling right
+ if(target==="R"){
+  if(tr===7&&tc===0)castling.Q=false;
+  if(tr===7&&tc===7)castling.K=false;
+ }
+ if(target==="r"){
+  if(tr===0&&tc===0)castling.q=false;
+  if(tr===0&&tc===7)castling.k=false;
+ }
+
+ // Promotion
+ if(p==="P"&&tr===0)b[tr][tc]="Q";
+ if(p==="p"&&tr===7)b[tr][tc]="q";
+
+ // Set en-passant target only after a 2-square pawn move
+ enPassant=null;
+ if(p==="P"&&fr===6&&tr===4)enPassant={r:5,c:fc};
+ if(p==="p"&&fr===1&&tr===3)enPassant={r:2,c:fc};
+}
+
+function hasLegalMove(side){
+ for(let fr=0;fr<8;fr++)for(let fc=0;fc<8;fc++){
+  const p=b[fr][fc];
+  if(!p||isWhite(p)!==side)continue;
+  for(let tr=0;tr<8;tr++)for(let tc=0;tc<8;tc++){
+   if(legalMove(fr,fc,tr,tc,side))return true;
+  }
+ }
+ return false;
+}
+
+function isCheckmate(side){return inCheck(side)&&!hasLegalMove(side)}
+function isStalemate(side){return !inCheck(side)&&!hasLegalMove(side)}
+
+resetGame();
+</script>
+</body>
+</html>
